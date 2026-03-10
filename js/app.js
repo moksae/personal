@@ -27,6 +27,8 @@ const App = (() => {
     editWriting: null,
     // Current section
     section: 'home',
+    _pendingImages: [],  // files queued for upload
+    _fileSha: null,      // cached GitHub SHA
   };
 
   // ─── Category Config ────────────────────────────
@@ -47,38 +49,70 @@ const App = (() => {
 
   // ─── Data ───────────────────────────────────────
   function getBase() {
-    const p = window.location.pathname.split('/').filter(Boolean);
-    return (p.length && !p[0].includes('.')) ? '/' + p[0] : '';
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    if (parts.length && !parts[0].includes('.') && !parts[0].endsWith('.html')) {
+      return '/' + parts[0];
+    }
+    return '';
   }
 
-  async function loadData() {
+  async function loadData(attempt = 1) {
     try {
-      const r = await fetch(`${getBase()}/data/posts.json?t=${Date.now()}`);
-      if (!r.ok) throw new Error();
+      const url = getBase() + '/data/posts.json?_t=' + Date.now();
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
       S.data = await r.json();
       S.data.posts    = S.data.posts    || [];
       S.data.reviews  = S.data.reviews  || [];
       S.data.writings = S.data.writings || [];
       renderAll();
-    } catch {
-      document.getElementById('posts-list').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-msg">Failed to load data</div></div>';
+    } catch(e) {
+      if (attempt < 3) {
+        setTimeout(() => loadData(attempt + 1), 800 * attempt);
+      } else {
+        document.getElementById('posts-list').innerHTML =
+          '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-msg">Could not load data. <a href="" style="color:var(--accent)">Refresh</a></div></div>';
+      }
     }
   }
 
   async function saveData(msg = 'Update') {
     if (!S.token || !S.owner || !S.repo) throw new Error('GitHub credentials required');
-    const body = JSON.stringify(S.data, null, 2);
-    const content = btoa(unescape(encodeURIComponent(body)));
-    const path = `${S.owner}/${S.repo}`;
-    const infoR = await fetch(`https://api.github.com/repos/${path}/contents/data/posts.json`,
-      { headers: { Authorization: `token ${S.token}`, Accept: 'application/vnd.github.v3+json' } });
-    const info = await infoR.json();
-    const r = await fetch(`https://api.github.com/repos/${path}/contents/data/posts.json`, {
+    const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(S.data, null, 2))));
+    const apiUrl = 'https://api.github.com/repos/' + S.owner + '/' + S.repo + '/contents/data/posts.json';
+    const hdrs = { Authorization: 'token ' + S.token, Accept: 'application/vnd.github.v3+json', 'Content-Type': 'application/json' };
+
+    // Get fresh SHA (or use cached)
+    if (!S._fileSha) {
+      const infoR = await fetch(apiUrl, { headers: hdrs });
+      if (!infoR.ok) throw new Error('Could not fetch file info (' + infoR.status + ')');
+      const info = await infoR.json();
+      S._fileSha = info.sha;
+    }
+
+    const r = await fetch(apiUrl, {
       method: 'PUT',
-      headers: { Authorization: `token ${S.token}`, Accept: 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: msg, content, sha: info.sha })
+      headers: hdrs,
+      body: JSON.stringify({ message: msg, content: encoded, sha: S._fileSha })
     });
-    if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+
+    if (r.status === 409) {
+      // SHA conflict — force refresh and retry once
+      S._fileSha = null;
+      return saveData(msg);
+    }
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      throw new Error(e.message || 'GitHub API error ' + r.status);
+    }
+
+    // Cache the new SHA from response to avoid an extra GET next save
+    try {
+      const result = await r.json();
+      if (result && result.content && result.content.sha) {
+        S._fileSha = result.content.sha;
+      }
+    } catch (_) { S._fileSha = null; }
   }
 
   // ─── Render All ─────────────────────────────────
@@ -91,9 +125,6 @@ const App = (() => {
 
   function renderProfile() {
     const c = S.data.config || {};
-    const av = c.avatar ? `<img src="${c.avatar}" alt="${c.author}">` : (c.author || 'A').charAt(0);
-    document.getElementById('profile-avatar').innerHTML = av;
-    document.getElementById('compose-avatar').innerHTML = av;
     document.getElementById('profile-name').textContent = c.author || 'Author';
     document.getElementById('profile-bio').textContent  = c.bio || '';
     document.getElementById('stat-posts').textContent = S.data.posts.length;
@@ -102,7 +133,8 @@ const App = (() => {
   }
 
   function renderSidebarCounts() {
-    document.getElementById('badge-home').textContent    = S.data.posts.length;
+    const totalAll = S.data.posts.filter(p=>!p.parentId).length + S.data.reviews.length + S.data.writings.length;
+    document.getElementById('badge-home').textContent    = totalAll;
     document.getElementById('badge-reviews').textContent = S.data.reviews.length;
     document.getElementById('badge-writings').textContent= S.data.writings.length;
 
@@ -140,59 +172,114 @@ const App = (() => {
   }
 
   // ═══════════════════════════════
-  //  HOME FEED
+  //  HOME FEED  (unified timeline)
   // ═══════════════════════════════
   function renderFeed() {
     const el = document.getElementById('posts-list');
-    const composeVis = S.isAdmin;
-    document.getElementById('compose-wrap').className = `compose ${composeVis ? 'show' : ''}`;
+    document.getElementById('compose-wrap').className = `compose ${S.isAdmin ? 'show' : ''}`;
 
-    let posts = S.data.posts.filter(p => !S.feedCat || (p.categories || []).includes(S.feedCat));
-    const tops = posts.filter(p => !p.parentId).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+    // Build unified item list
+    const items = [];
 
-    if (!tops.length) {
+    // Top-level posts (include thread replies count)
+    S.data.posts.filter(p => !p.parentId).forEach(p => {
+      items.push({ type: 'post', ts: p.timestamp, data: p });
+    });
+
+    // Reviews
+    S.data.reviews.forEach(r => {
+      items.push({ type: 'review', ts: r.timestamp, data: r });
+    });
+
+    // Writings
+    S.data.writings.forEach(w => {
+      items.push({ type: 'writing', ts: w.timestamp, data: w });
+    });
+
+    // Sort newest first
+    items.sort((a, b) => new Date(b.ts) - new Date(a.ts));
+
+    if (!items.length) {
       el.innerHTML = '<div class="empty"><div class="empty-icon">🌿</div><div class="empty-msg">No posts yet</div></div>';
       return;
     }
 
-    el.innerHTML = tops.map(post => {
-      const replies = S.data.posts
-        .filter(p => p.threadId === post.threadId && p.id !== post.id)
-        .sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-      const all = [post, ...replies];
-      const preview = all.slice(0, 2);
-      const more = all.length > 2;
-      return `<div class="post-wrap">${preview.map((p, i) =>
-        postCardHTML(p, i < preview.length - 1)
-      ).join('')}${more ? `<div style="padding:8px 0 14px 52px"><button class="act-btn" onclick="App.openFeedThread('${post.threadId}')">+ ${all.length - 2}개 더 보기</button></div>` : ''}</div>`;
+    el.innerHTML = items.map(item => {
+      if (item.type === 'post')    return postCardHTML(item.data);
+      if (item.type === 'review')  return reviewCardHTML(item.data);
+      if (item.type === 'writing') return writingCardHTML(item.data);
+      return '';
     }).join('');
   }
 
-  function postCardHTML(p, showLine) {
-    const av = S.data.config.avatar
-      ? `<img src="${S.data.config.avatar}" alt="">` : (S.data.config.author || 'A').charAt(0);
+  function reviewCardHTML(r) {
+    const catColor = { movie:'var(--cat-movie)', game:'var(--cat-game)', drama:'var(--cat-drama)', book:'var(--cat-book)', travel:'var(--cat-travel)' };
+    const col = catColor[r.category] || 'var(--text-dim)';
     const adminA = S.isAdmin ? `
-      <button class="act-btn" onclick="event.stopPropagation();App.editPost('${p.id}')">✏️</button>
-      <button class="act-btn del" onclick="event.stopPropagation();App.deletePost('${p.id}')">🗑️</button>
-      <button class="act-btn reply" onclick="event.stopPropagation();App.replyPost('${p.id}')">↩</button>` : '';
-    const rc = S.data.posts.filter(x => x.parentId === p.id).length;
+      <button class="act-btn" onclick="event.stopPropagation();App.editReview('${r.id}')">✏️ Edit</button>
+      <button class="act-btn del" onclick="event.stopPropagation();App.deleteReview('${r.id}')">🗑️ Delete</button>` : '';
     return `
-      <div class="post-card" onclick="App.openFeedThread('${p.threadId}')">
-        <div class="thread-col">
-          <div class="p-avatar">${av}</div>
-          ${showLine ? '<div class="t-line"></div>' : ''}
-        </div>
-        <div class="post-body">
-          <div class="post-meta">
-            <span class="post-author">${esc(S.data.config.author || 'Author')}</span>
-            <span class="post-time">${relTime(p.timestamp)}</span>
-            ${p.edited ? '<span class="post-edited">edited</span>' : ''}
+      <div class="post-wrap">
+        <div class="post-card feed-card-review" onclick="App.goToReview('${r.id}')">
+          <div class="post-body">
+            <div class="post-meta">
+              <span class="feed-type-badge" style="background:${col}20;color:${col};border:1px solid ${col}40">${CATS[r.category]?.emoji||''} ${CATS[r.category]?.label||r.category}</span>
+              <span class="post-time">${relTime(r.timestamp)}</span>
+            </div>
+            <div class="feed-card-title">${esc(r.title)}</div>
+            <div class="feed-thread-preview">${(r.threads||[]).slice(0,1).map(t=>esc(t.content.substring(0,120))+'…').join('')}</div>
+            <div class="post-actions">${adminA}</div>
           </div>
-          <div class="post-text">${fmtContent(p.content)}</div>
-          ${(p.categories||[]).length ? `<div class="post-tags">${p.categories.map(t=>`<span class="p-tag" onclick="event.stopPropagation();App.feedCat('${t}')">#${t}</span>`).join('')}</div>` : ''}
-          <div class="post-actions">
-            ${rc ? `<button class="act-btn" onclick="event.stopPropagation();App.openFeedThread('${p.threadId}')">💬 ${rc}</button>` : ''}
-            ${adminA}
+        </div>
+      </div>`;
+  }
+
+  function writingCardHTML(w) {
+    const adminA = S.isAdmin ? `
+      <button class="act-btn" onclick="event.stopPropagation();App.editWriting('${w.id}')">✏️ Edit</button>
+      <button class="act-btn del" onclick="event.stopPropagation();App.deleteWriting('${w.id}')">🗑️ Delete</button>` : '';
+    return `
+      <div class="post-wrap">
+        <div class="post-card feed-card-writing" onclick="App.goToWriting('${w.id}')">
+          <div class="post-body">
+            <div class="post-meta">
+              <span class="feed-type-badge" style="background:rgba(44,123,229,0.1);color:var(--accent);border:1px solid rgba(44,123,229,0.2)">✍️ Writing</span>
+              <span class="post-time">${relTime(w.timestamp)}</span>
+            </div>
+            <div class="feed-card-title">${esc(w.title)}</div>
+            <div class="feed-thread-preview">${esc((w.excerpt||w.content).substring(0,120))}…</div>
+            ${(w.tags||[]).length ? `<div class="post-tags">${w.tags.map(t=>`<span class="p-tag">${esc(t)}</span>`).join('')}</div>` : ''}
+            <div class="post-actions">${adminA}</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function postCardHTML(p, showLine) {
+    const adminA = S.isAdmin ? `
+      <button class="act-btn" onclick="event.stopPropagation();App.editPost('${p.id}')">✏️ Edit</button>
+      <button class="act-btn del" onclick="event.stopPropagation();App.deletePost('${p.id}')">🗑️ Delete</button>
+      <button class="act-btn reply" onclick="event.stopPropagation();App.replyPost('${p.id}')">↩ Reply</button>` : '';
+    const rc = S.data.posts.filter(x => x.parentId === p.id).length;
+    const imgs = (p.images||[]).map(url =>
+      `<img src="${url}" class="post-img" onclick="event.stopPropagation()" loading="lazy">`
+    ).join('');
+    return `
+      <div class="post-wrap">
+        <div class="post-card${showLine ? ' has-thread' : ''}" onclick="App.openFeedThread('${p.threadId}')">
+          <div class="post-body">
+            <div class="post-meta">
+              <span class="post-author">${esc(S.data.config.author || 'Author')}</span>
+              <span class="post-time">${relTime(p.timestamp)}</span>
+              ${p.edited ? '<span class="post-edited">edited</span>' : ''}
+            </div>
+            <div class="post-text">${fmtContent(p.content)}</div>
+            ${imgs ? `<div class="post-images">${imgs}</div>` : ''}
+            ${(p.categories||[]).length ? `<div class="post-tags">${p.categories.map(t=>`<span class="p-tag" onclick="event.stopPropagation();App.feedCat('${t}')">#${t}</span>`).join('')}</div>` : ''}
+            <div class="post-actions">
+              ${rc ? `<button class="act-btn" onclick="event.stopPropagation();App.openFeedThread('${p.threadId}')">💬 ${rc}</button>` : ''}
+              ${adminA}
+            </div>
           </div>
         </div>
       </div>`;
@@ -209,8 +296,6 @@ const App = (() => {
     const dv = document.getElementById('feed-thread-view');
     dv.classList.add('show');
 
-    const av = S.data.config.avatar
-      ? `<img src="${S.data.config.avatar}" alt="">` : (S.data.config.author || 'A').charAt(0);
     const root = tposts[0];
     const rest = tposts.slice(1);
 
@@ -224,21 +309,18 @@ const App = (() => {
     document.getElementById('feed-thread-posts').innerHTML = `
       <div class="td-body">
         <div class="td-root">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-            <div class="p-avatar" style="width:42px;height:42px;font-size:17px">${av}</div>
-            <div>
-              <div style="font-weight:600;font-size:14px">${esc(S.data.config.author||'Author')}</div>
+          <div style="margin-bottom:14px">
+              <div style="font-weight:700;font-size:14px;font-family:var(--font-ko-title)">${esc(S.data.config.author||'Author')}</div>
               <div style="font-size:11px;color:var(--text-sub);font-family:var(--font-mono)">${relTime(root.timestamp)}</div>
-            </div>
           </div>
           <div class="td-content">${fmtContent(root.content)}</div>
+          ${(root.images||[]).length ? `<div class="post-images">${root.images.map(u=>`<img src="${u}" class="post-img" loading="lazy">`).join('')}</div>` : ''}
           ${(root.categories||[]).length ? `<div class="post-tags">${root.categories.map(t=>`<span class="p-tag">#${t}</span>`).join('')}</div>` : ''}
           <div class="td-meta">${fmtDate(root.timestamp)}${root.edited?' · <em>edited</em>':''}</div>
           ${adminRootA}
         </div>
         ${rest.map(p => `
-          <div class="td-reply">
-            <div class="thread-col"><div class="p-avatar" style="width:34px;height:34px;font-size:14px">${av}</div></div>
+          <div class="td-reply" style="padding:14px 0;border-bottom:1px solid var(--border)">
             <div class="post-body">
               <div class="post-meta">
                 <span class="post-author">${esc(S.data.config.author||'Author')}</span>
@@ -259,7 +341,7 @@ const App = (() => {
     // Giscus
     const gc = window.GISCUS_CONFIG || {};
     document.getElementById('feed-comments').innerHTML = gc.repo
-      ? `<script src="https://giscus.app/client.js" data-repo="${gc.repo}" data-repo-id="${gc.repoId||''}" data-category="${gc.category||'General'}" data-category-id="${gc.categoryId||''}" data-mapping="specific" data-term="${threadId}" data-reactions-enabled="1" data-theme="dark" data-lang="ko" crossorigin="anonymous" async></scr` + `ipt>`
+      ? `<script src="https://giscus.app/client.js" data-repo="${gc.repo}" data-repo-id="${gc.repoId||''}" data-category="${gc.category||'General'}" data-category-id="${gc.categoryId||''}" data-mapping="specific" data-term="${threadId}" data-reactions-enabled="1" data-theme="light" data-lang="ko" crossorigin="anonymous" async></scr` + `ipt>`
       : `<div style="padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);text-align:center;font-size:13px;color:var(--text-sub)">댓글 활성화: <a href="https://giscus.app/ko" target="_blank" style="color:var(--accent)">Giscus 설정하기 →</a></div>`;
 
     window.scrollTo(0, 0);
@@ -288,6 +370,8 @@ const App = (() => {
 
   function cancelCompose() {
     S.replyTo = null; S.editPost = null;
+    S._pendingImages = [];
+    clearImagePreviews();
     document.getElementById('compose-wrap').classList.remove('show');
     if (S.section === 'home' && S.isAdmin)
       document.getElementById('compose-wrap').classList.add('show');
@@ -321,33 +405,79 @@ const App = (() => {
   }
 
   async function sendPost() {
-    const content = document.getElementById('compose-ta').value.trim();
-    if (!content) return;
+    const text = document.getElementById('compose-ta').value.trim();
+    if (!text && S._pendingImages.length === 0) return;
     const cat = document.getElementById('compose-tag').value;
     const btn = document.getElementById('send-btn');
     btn.disabled = true; btn.textContent = 'Saving...';
     try {
+      // Upload any pending images first
+      const imageUrls = [];
+      for (const file of S._pendingImages) {
+        btn.textContent = `Uploading image…`;
+        const url = await uploadImageToGitHub(file);
+        imageUrls.push(url);
+      }
+
       if (S.editPost) {
-        S.editPost.content = content;
+        S.editPost.content = text;
         if (cat) S.editPost.categories = [cat];
+        if (imageUrls.length) S.editPost.images = [...(S.editPost.images||[]), ...imageUrls];
         S.editPost.edited = true; S.editPost.editedAt = new Date().toISOString();
       } else {
         const id = `post-${Date.now()}`;
         S.data.posts.unshift({
-          id, content, timestamp: new Date().toISOString(),
+          id, content: text, timestamp: new Date().toISOString(),
           categories: cat ? [cat] : [],
           parentId: S.replyTo ? S.replyTo.id : null,
           threadId: S.replyTo ? S.replyTo.threadId : `thread-${id}`,
+          images: imageUrls,
           edited: false, editedAt: null
         });
       }
+
+      btn.textContent = 'Saving...';
       await saveData(S.editPost ? 'Edit post' : 'New post');
+      S._pendingImages = [];
+      clearImagePreviews();
       cancelCompose();
       renderProfile(); renderSidebarCounts(); renderFeed();
       if (S.feedView === 'thread') openFeedThread(S.feedThreadId);
       toast('Saved ✓', 'ok');
     } catch(e) { toast(e.message, 'err'); }
     btn.disabled = false; btn.textContent = 'Post';
+  }
+
+  // Upload image file to GitHub repo → returns raw URL
+  async function uploadImageToGitHub(file) {
+    if (!S.token || !S.owner || !S.repo) throw new Error('Admin login required to upload images');
+    const ext = file.name.split('.').pop().toLowerCase() || 'jpg';
+    const fname = `img-${Date.now()}-${Math.random().toString(36).slice(2,7)}.${ext}`;
+    const b64 = await fileToBase64(file);
+    const apiUrl = `https://api.github.com/repos/${S.owner}/${S.repo}/contents/images/${fname}`;
+    const r = await fetch(apiUrl, {
+      method: 'PUT',
+      headers: { Authorization: `token ${S.token}`, Accept: 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'Upload image', content: b64 })
+    });
+    if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.message || 'Image upload failed'); }
+    return `https://raw.githubusercontent.com/${S.owner}/${S.repo}/main/images/${fname}`;
+  }
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function clearImagePreviews() {
+    const wrap = document.getElementById('image-preview-wrap');
+    if (wrap) wrap.innerHTML = '';
+    const inp = document.getElementById('image-input');
+    if (inp) inp.value = '';
   }
 
   async function deletePost(id) {
@@ -374,9 +504,9 @@ const App = (() => {
 
   function updateCC() {
     const len = document.getElementById('compose-ta').value.length;
-    const max = 500;
+    const max = 5000;
     const el = document.getElementById('char-count');
-    el.textContent = `${len} / ${max}`;
+    el.textContent = `${len.toLocaleString()} chars`;
     el.className = `cc${len>max*.9?' over':len>max*.75?' warn':''}`;
     document.getElementById('send-btn').disabled = !len || len > max;
   }
@@ -439,8 +569,6 @@ const App = (() => {
 
     const catColor = { movie:'var(--cat-movie)', game:'var(--cat-game)', drama:'var(--cat-drama)', book:'var(--cat-book)', travel:'var(--cat-travel)' };
     const col = catColor[r.category] || 'var(--text-dim)';
-    const av = S.data.config.avatar
-      ? `<img src="${S.data.config.avatar}" alt="">` : (S.data.config.author||'A').charAt(0);
 
     const adminA = S.isAdmin ? `
       <div class="wd-actions">
@@ -476,7 +604,7 @@ const App = (() => {
 
     const gc = window.GISCUS_CONFIG || {};
     document.getElementById('review-comments').innerHTML = gc.repo
-      ? `<script src="https://giscus.app/client.js" data-repo="${gc.repo}" data-repo-id="${gc.repoId||''}" data-category="${gc.category||'General'}" data-category-id="${gc.categoryId||''}" data-mapping="specific" data-term="${id}" data-reactions-enabled="1" data-theme="dark" data-lang="ko" crossorigin="anonymous" async></scr` + `ipt>`
+      ? `<script src="https://giscus.app/client.js" data-repo="${gc.repo}" data-repo-id="${gc.repoId||''}" data-category="${gc.category||'General'}" data-category-id="${gc.categoryId||''}" data-mapping="specific" data-term="${id}" data-reactions-enabled="1" data-theme="light" data-lang="ko" crossorigin="anonymous" async></scr` + `ipt>`
       : `<div style="padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);text-align:center;font-size:13px;color:var(--text-sub)"><a href="https://giscus.app/ko" target="_blank" style="color:var(--accent)">Giscus 설정하기 →</a></div>`;
 
     window.scrollTo(0,0);
@@ -638,7 +766,7 @@ const App = (() => {
 
     const gc = window.GISCUS_CONFIG || {};
     document.getElementById('writing-comments').innerHTML = gc.repo
-      ? `<script src="https://giscus.app/client.js" data-repo="${gc.repo}" data-repo-id="${gc.repoId||''}" data-category="${gc.category||'General'}" data-category-id="${gc.categoryId||''}" data-mapping="specific" data-term="${id}" data-reactions-enabled="1" data-theme="dark" data-lang="ko" crossorigin="anonymous" async></scr` + `ipt>`
+      ? `<script src="https://giscus.app/client.js" data-repo="${gc.repo}" data-repo-id="${gc.repoId||''}" data-category="${gc.category||'General'}" data-category-id="${gc.categoryId||''}" data-mapping="specific" data-term="${id}" data-reactions-enabled="1" data-theme="light" data-lang="ko" crossorigin="anonymous" async></scr` + `ipt>`
       : `<div style="padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);text-align:center;font-size:13px;color:var(--text-sub)"><a href="https://giscus.app/ko" target="_blank" style="color:var(--accent)">Giscus 설정하기 →</a></div>`;
 
     window.scrollTo(0,0);
@@ -842,6 +970,31 @@ const App = (() => {
     // FAB
     document.getElementById('fab').onclick = fabAction;
 
+    // Image file input
+    const imgInput = document.getElementById('image-input');
+    if (imgInput) {
+      imgInput.addEventListener('change', (e) => {
+        const files = Array.from(e.target.files || []);
+        const allowed = ['image/jpeg','image/png','image/gif','image/webp'];
+        files.forEach(f => {
+          if (!allowed.includes(f.type)) { toast('Only JPG/PNG/GIF/WEBP allowed', 'err'); return; }
+          if (f.size > 10 * 1024 * 1024) { toast('Max image size: 10MB', 'err'); return; }
+          S._pendingImages.push(f);
+          // Show preview
+          const reader = new FileReader();
+          reader.onload = ev => {
+            const wrap = document.getElementById('image-preview-wrap');
+            const div = document.createElement('div');
+            div.className = 'img-preview-item';
+            div.innerHTML = `<img src="${ev.target.result}"><button onclick="App._removeImg(${S._pendingImages.length-1}, this)">✕</button>`;
+            wrap.appendChild(div);
+          };
+          reader.readAsDataURL(f);
+        });
+        imgInput.value = '';
+      });
+    }
+
     // Feed compose
     document.getElementById('compose-ta').addEventListener('input', updateCC);
     document.getElementById('compose-ta').addEventListener('keydown', e => {
@@ -868,10 +1021,31 @@ const App = (() => {
     document.getElementById('wc-cancel').onclick = closeWritingCompose;
   }
 
+  // Navigate from Main feed card → correct section + detail
+  function _removeImg(idx, btn) {
+    S._pendingImages.splice(idx, 1);
+    btn.closest('.img-preview-item').remove();
+    // Re-index remaining items
+    document.querySelectorAll('#image-preview-wrap .img-preview-item button').forEach((b, i) => {
+      b.setAttribute('onclick', `App._removeImg(${i}, this)`);
+    });
+  }
+
+  function goToReview(id) {
+    renderSection('reviews');
+    setTimeout(() => openReview(id), 50);
+  }
+
+  function goToWriting(id) {
+    renderSection('writings');
+    setTimeout(() => openWriting(id), 50);
+  }
+
   return {
     init,
     // Feed
     openFeedThread, closeFeedThread, replyPost, editPost, deletePost, feedCat,
+    goToReview, goToWriting, _removeImg,
     // Reviews
     openReview, closeReview, editReview, deleteReview,
     // Writings
