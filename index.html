@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Space</title>
+  <meta name="description" content="개인 블로그">
+  <meta name="theme-color" content="#0e0e0f">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ── Giscus 댓글 설정 (https://giscus.app/ko) ── -->
+<script>
+  window.GISCUS_CONFIG = {
+    repo: "",         // "username/repo-name"
+    repoId: "",
+    category: "General",
+    categoryId: ""
+  };
+</script>
+
+<div id="toast" class="toast"></div>
+
+<!-- Admin Modal -->
+<div id="admin-modal" class="modal-bg">
+  <div class="modal">
+    <div class="modal-title">🔑 관리자 로그인</div>
+    <div class="modal-desc">
+      GitHub Personal Access Token으로 포스트/리뷰/글을 작성합니다.<br>
+      토큰은 이 브라우저에만 저장됩니다.<br><br>
+      <a href="https://github.com/settings/tokens/new?scopes=repo&description=my-homepage" target="_blank">→ GitHub Token 발급 (repo 권한)</a>
+    </div>
+    <div class="modal-grid">
+      <input type="text" id="m-owner" class="modal-input" placeholder="GitHub 사용자명">
+      <input type="text" id="m-repo"  class="modal-input" placeholder="레포지토리명">
+    </div>
+    <input type="password" id="m-token" class="modal-input" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+    <div class="modal-actions">
+      <button id="m-cancel" class="btn btn-ghost">취소</button>
+      <button id="m-save"   class="btn btn-primary">로그인</button>
+    </div>
+  </div>
+</div>
+
+<!-- Layout -->
+<div class="layout">
+
+  <!-- ═══ Sidebar ═══ -->
+  <aside class="sidebar">
+
+    <div class="logo">
+      <div class="logo-gem"></div>
+      My Space
+    </div>
+
+    <!-- Profile -->
+    <div class="profile">
+      <div class="avatar" id="profile-avatar">A</div>
+      <div class="profile-name" id="profile-name">Author</div>
+      <div class="profile-bio"  id="profile-bio">Bio</div>
+      <div class="profile-stats">
+        <div class="stat">
+          <div class="stat-num" id="stat-posts">0</div>
+          <div class="stat-label">포스트</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num" id="stat-reviews">0</div>
+          <div class="stat-label">리뷰</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num" id="stat-writings">0</div>
+          <div class="stat-label">글</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Nav -->
+    <nav class="nav">
+      <button class="nav-item active" id="nav-home">
+        <span class="ni">🏠</span> 홈
+        <span class="nbadge" id="badge-home">0</span>
+      </button>
+
+      <button class="nav-item" id="nav-reviews">
+        <span class="ni">📋</span> 리뷰
+        <span class="nbadge" id="badge-reviews">0</span>
+      </button>
+
+      <!-- Review sub-nav -->
+      <div class="sub-nav" id="review-subnav">
+        <button class="sub-item active" data-cat="all">
+          <span class="sub-dot" style="background:var(--text-dim)"></span>
+          전체 <span id="sub-count-all" style="margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-dim)"></span>
+        </button>
+        <button class="sub-item" data-cat="movie">
+          <span class="sub-dot bg-movie"></span>
+          🎬 Movie <span id="sub-count-movie" style="margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-dim)"></span>
+        </button>
+        <button class="sub-item" data-cat="game">
+          <span class="sub-dot bg-game"></span>
+          🎮 Game <span id="sub-count-game" style="margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-dim)"></span>
+        </button>
+        <button class="sub-item" data-cat="drama">
+          <span class="sub-dot bg-drama"></span>
+          📺 Drama <span id="sub-count-drama" style="margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-dim)"></span>
+        </button>
+        <button class="sub-item" data-cat="book">
+          <span class="sub-dot bg-book"></span>
+          📚 Book <span id="sub-count-book" style="margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-dim)"></span>
+        </button>
+        <button class="sub-item" data-cat="fanwork">
+          <span class="sub-dot bg-fanwork"></span>
+          ✨ Fanwork <span id="sub-count-fanwork" style="margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-dim)"></span>
+        </button>
+      </div>
+
+      <button class="nav-item" id="nav-writings">
+        <span class="ni">🖊️</span> 글
+        <span class="nbadge" id="badge-writings">0</span>
+      </button>
+    </nav>
+
+    <!-- Footer -->
+    <div class="sidebar-footer">
+      <button class="admin-btn" id="admin-btn">
+        🔐 <span class="al">관리자 로그인</span>
+      </button>
+    </div>
+
+  </aside>
+
+  <!-- ═══ Main ═══ -->
+  <main class="main">
+
+    <!-- ── HOME PAGE ── -->
+    <div class="page active" id="page-home">
+      <div class="page-header">
+        <div class="page-title">홈</div>
+        <div class="page-sub">최신 포스트</div>
+      </div>
+
+      <div class="feed-body">
+
+        <!-- Compose -->
+        <div class="compose" id="compose-wrap">
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <div class="avatar" id="compose-avatar" style="width:36px;height:36px;font-size:15px;flex-shrink:0">A</div>
+            <div style="flex:1">
+              <div class="edit-banner" id="edit-banner">✏️ 포스트 수정 중</div>
+              <div class="reply-banner" id="reply-banner" style="display:none">
+                <span id="reply-banner-text"></span>
+                <button id="cancel-reply">✕</button>
+              </div>
+              <textarea id="compose-ta" class="compose-ta" placeholder="무슨 생각을 하고 있나요? (Ctrl+Enter 전송)" maxlength="500"></textarea>
+              <div class="compose-bar">
+                <div class="compose-left">
+                  <select id="compose-tag" class="tag-sel"></select>
+                  <span id="char-count" class="cc">0 / 500</span>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <button id="cancel-btn" class="btn btn-ghost">취소</button>
+                  <button id="send-btn"   class="btn btn-primary" disabled>포스트</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feed list -->
+        <div id="feed-list-view">
+          <div id="posts-list"><div class="loading-state">불러오는 중...</div></div>
+        </div>
+
+        <!-- Thread detail -->
+        <div id="feed-thread-view" class="thread-detail">
+          <button id="feed-thread-back" class="td-back">← 피드</button>
+          <div id="feed-thread-posts"></div>
+          <div class="comments-wrap" style="padding:0 24px 32px">
+            <div class="comments-title">💬 댓글</div>
+            <div id="feed-comments"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── REVIEWS PAGE ── -->
+    <div class="page" id="page-reviews">
+      <div class="page-header">
+        <div class="page-title">리뷰</div>
+        <div class="page-sub">타래 리뷰 모음</div>
+      </div>
+
+      <!-- Category filter bar -->
+      <div class="cat-bar">
+        <button class="cat-pill active" data-cat="all">전체</button>
+        <button class="cat-pill" data-cat="movie"><span class="cd bg-movie"></span>🎬 Movie</button>
+        <button class="cat-pill" data-cat="game"><span class="cd bg-game"></span>🎮 Game</button>
+        <button class="cat-pill" data-cat="drama"><span class="cd bg-drama"></span>📺 Drama</button>
+        <button class="cat-pill" data-cat="book"><span class="cd bg-book"></span>📚 Book</button>
+        <button class="cat-pill" data-cat="fanwork"><span class="cd bg-fanwork"></span>✨ Fanwork</button>
+      </div>
+
+      <!-- Review compose (admin) -->
+      <div class="review-compose" id="review-compose">
+        <div class="rc-label">새 리뷰 작성</div>
+        <input type="text" id="rc-title" class="rc-input" placeholder="리뷰 제목 (작품명 포함 권장)">
+        <select id="rc-cat" class="rc-cat-sel">
+          <option value="movie">🎬 Movie</option>
+          <option value="game">🎮 Game</option>
+          <option value="drama">📺 Drama</option>
+          <option value="book">📚 Book</option>
+          <option value="fanwork">✨ Fanwork</option>
+        </select>
+        <div class="rc-label" style="margin-top:4px">타래 내용</div>
+        <div id="rc-threads-wrap"></div>
+        <button class="rc-add-thread" id="rc-add-thread" onclick="App._addThread && App._addThread()">+ 타래 추가</button>
+        <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
+          <button id="rc-cancel" class="btn btn-ghost">취소</button>
+          <button id="rc-send"   class="btn btn-primary">저장</button>
+        </div>
+      </div>
+
+      <!-- List view -->
+      <div id="review-list-view">
+        <div class="review-list" id="review-list">
+          <div class="loading-state">불러오는 중...</div>
+        </div>
+      </div>
+
+      <!-- Detail view -->
+      <div id="review-detail-view" class="review-detail"></div>
+
+    </div>
+
+    <!-- ── WRITINGS PAGE ── -->
+    <div class="page" id="page-writings">
+      <div class="page-header">
+        <div class="page-title">글</div>
+        <div class="page-sub">소설, 산문, 에세이</div>
+      </div>
+
+      <!-- Writing compose (admin) -->
+      <div class="writing-compose" id="writing-compose">
+        <div class="rc-label">새 글 작성</div>
+        <input type="text" id="wc-title" class="rc-input" placeholder="제목">
+        <input type="text" id="wc-tags"  class="rc-input" placeholder="태그 (쉼표 구분, 예: 단편소설, SF)">
+        <textarea id="wc-content" class="wc-ta" placeholder="내용을 입력하세요...&#10;&#10;단락 구분은 빈 줄로 합니다."></textarea>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button id="wc-cancel" class="btn btn-ghost">취소</button>
+          <button id="wc-send"   class="btn btn-primary">저장</button>
+        </div>
+      </div>
+
+      <!-- List -->
+      <div id="writing-list-view">
+        <div class="writing-list" id="writing-list">
+          <div class="loading-state">불러오는 중...</div>
+        </div>
+      </div>
+
+      <!-- Detail -->
+      <div id="writing-detail-view" class="writing-detail"></div>
+
+    </div>
+
+  </main>
+</div>
+
+<!-- FAB -->
+<button id="fab" class="fab">✏️</button>
+
+<script src="js/app.js"></script>
+
+<!-- Patch: wire rc-add-thread button after app loads -->
+<script>
+  document.getElementById('rc-add-thread').onclick = function() {
+    const wrap = document.getElementById('rc-threads-wrap');
+    wrap.insertAdjacentHTML('beforeend',
+      `<div class="rc-thread-entry">
+        <textarea class="rc-thread-ta" placeholder="이 타래의 내용을 입력하세요..."></textarea>
+        <button class="rc-del-thread" onclick="this.closest('.rc-thread-entry').remove()">✕</button>
+      </div>`);
+  };
+</script>
+
+</body>
+</html>
