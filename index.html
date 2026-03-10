@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>My Space</title>
-  <meta name="description" content="개인 블로그">
+  <title>Fictions</title>
+  <meta name="description" content="">
   <meta name="theme-color" content="#ffffff">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -150,11 +150,18 @@
               <span id="reply-banner-text"></span>
               <button id="cancel-reply">✕</button>
             </div>
-            <textarea id="compose-ta" class="compose-ta" placeholder="What's on your mind? (Ctrl+Enter to post)" maxlength="500"></textarea>
+            <textarea id="compose-ta" class="compose-ta" placeholder="What's on your mind? (Ctrl+Enter to post)" maxlength="5000"></textarea>
+            <!-- Image preview strip -->
+            <div id="image-preview-wrap" class="image-preview-wrap"></div>
+
             <div class="compose-bar">
               <div class="compose-left">
+                <label class="img-upload-btn" title="Attach image">
+                  📎
+                  <input type="file" id="image-input" accept="image/jpeg,image/png,image/gif,image/webp" multiple style="display:none">
+                </label>
                 <select id="compose-tag" class="tag-sel"></select>
-                <span id="char-count" class="cc">0 / 500</span>
+                <span id="char-count" class="cc">0 chars</span>
               </div>
               <div style="display:flex;gap:8px">
                 <button id="cancel-btn" class="btn btn-ghost">Cancel</button>
