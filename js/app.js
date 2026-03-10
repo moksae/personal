@@ -31,11 +31,11 @@ const App = (() => {
 
   // ─── Category Config ────────────────────────────
   const CATS = {
-    movie:   { label: 'Movie',   emoji: '🎬' },
-    game:    { label: 'Game',    emoji: '🎮' },
-    drama:   { label: 'Drama',   emoji: '📺' },
-    book:    { label: 'Book',    emoji: '📚' },
-    fanwork: { label: 'Fanwork', emoji: '✨' },
+    movie:  { label: 'Movie',  emoji: '🎬' },
+    game:   { label: 'Game',   emoji: '🎮' },
+    drama:  { label: 'Drama',  emoji: '📺' },
+    book:   { label: 'Book',   emoji: '📚' },
+    travel: { label: 'Travel', emoji: '✈️' },
   };
 
   // ─── Init ───────────────────────────────────────
@@ -61,12 +61,12 @@ const App = (() => {
       S.data.writings = S.data.writings || [];
       renderAll();
     } catch {
-      document.getElementById('posts-list').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-msg">데이터를 불러올 수 없습니다</div></div>';
+      document.getElementById('posts-list').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-msg">Failed to load data</div></div>';
     }
   }
 
   async function saveData(msg = 'Update') {
-    if (!S.token || !S.owner || !S.repo) throw new Error('GitHub 설정 필요');
+    if (!S.token || !S.owner || !S.repo) throw new Error('GitHub credentials required');
     const body = JSON.stringify(S.data, null, 2);
     const content = btoa(unescape(encodeURIComponent(body)));
     const path = `${S.owner}/${S.repo}`;
@@ -112,11 +112,13 @@ const App = (() => {
       const el = document.getElementById(`sub-count-${cat}`);
       if (el) el.textContent = rv.filter(r => r.category === cat).length;
     });
+    const allEl = document.getElementById("sub-count-all");
+    if (allEl) allEl.textContent = S.data.reviews.length;
   }
 
   function renderFeedCatDropdown() {
     const sel = document.getElementById('compose-tag');
-    sel.innerHTML = '<option value="">카테고리 없음</option>';
+    sel.innerHTML = '<option value="">No category</option>';
     (S.data.config.feedCategories || []).forEach(c => {
       sel.innerHTML += `<option value="${c}">${c}</option>`;
     });
@@ -149,7 +151,7 @@ const App = (() => {
     const tops = posts.filter(p => !p.parentId).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
 
     if (!tops.length) {
-      el.innerHTML = '<div class="empty"><div class="empty-icon">🌿</div><div class="empty-msg">포스트가 없습니다</div></div>';
+      el.innerHTML = '<div class="empty"><div class="empty-icon">🌿</div><div class="empty-msg">No posts yet</div></div>';
       return;
     }
 
@@ -184,7 +186,7 @@ const App = (() => {
           <div class="post-meta">
             <span class="post-author">${esc(S.data.config.author || 'Author')}</span>
             <span class="post-time">${relTime(p.timestamp)}</span>
-            ${p.edited ? '<span class="post-edited">수정됨</span>' : ''}
+            ${p.edited ? '<span class="post-edited">edited</span>' : ''}
           </div>
           <div class="post-text">${fmtContent(p.content)}</div>
           ${(p.categories||[]).length ? `<div class="post-tags">${p.categories.map(t=>`<span class="p-tag" onclick="event.stopPropagation();App.feedCat('${t}')">#${t}</span>`).join('')}</div>` : ''}
@@ -214,8 +216,8 @@ const App = (() => {
 
     const adminRootA = S.isAdmin ? `
       <div class="td-actions">
-        <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px" onclick="App.editPost('${root.id}')">✏️ 수정</button>
-        <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px;color:var(--danger)" onclick="App.deletePost('${root.id}')">🗑️ 삭제</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px" onclick="App.editPost('${root.id}')">✏️ Edit</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px;color:var(--danger)" onclick="App.deletePost('${root.id}')">🗑️ Delete</button>
         <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px" onclick="App.replyPost('${root.id}')">↩ 답글</button>
       </div>` : '';
 
@@ -231,7 +233,7 @@ const App = (() => {
           </div>
           <div class="td-content">${fmtContent(root.content)}</div>
           ${(root.categories||[]).length ? `<div class="post-tags">${root.categories.map(t=>`<span class="p-tag">#${t}</span>`).join('')}</div>` : ''}
-          <div class="td-meta">${fmtDate(root.timestamp)}${root.edited?' · <em>수정됨</em>':''}</div>
+          <div class="td-meta">${fmtDate(root.timestamp)}${root.edited?' · <em>edited</em>':''}</div>
           ${adminRootA}
         </div>
         ${rest.map(p => `
@@ -241,7 +243,7 @@ const App = (() => {
               <div class="post-meta">
                 <span class="post-author">${esc(S.data.config.author||'Author')}</span>
                 <span class="post-time">${relTime(p.timestamp)}</span>
-                ${p.edited?'<span class="post-edited">수정됨</span>':''}
+                ${p.edited?'<span class="post-edited">edited</span>':''}
               </div>
               <div class="post-text">${fmtContent(p.content)}</div>
               ${(p.categories||[]).length ? `<div class="post-tags">${p.categories.map(t=>`<span class="p-tag">#${t}</span>`).join('')}</div>` : ''}
@@ -323,7 +325,7 @@ const App = (() => {
     if (!content) return;
     const cat = document.getElementById('compose-tag').value;
     const btn = document.getElementById('send-btn');
-    btn.disabled = true; btn.textContent = '저장 중...';
+    btn.disabled = true; btn.textContent = 'Saving...';
     try {
       if (S.editPost) {
         S.editPost.content = content;
@@ -343,13 +345,13 @@ const App = (() => {
       cancelCompose();
       renderProfile(); renderSidebarCounts(); renderFeed();
       if (S.feedView === 'thread') openFeedThread(S.feedThreadId);
-      toast('저장되었습니다 ✓', 'ok');
+      toast('Saved ✓', 'ok');
     } catch(e) { toast(e.message, 'err'); }
-    btn.disabled = false; btn.textContent = '포스트';
+    btn.disabled = false; btn.textContent = 'Post';
   }
 
   async function deletePost(id) {
-    if (!confirm('포스트를 삭제할까요?')) return;
+    if (!confirm('Delete this post?')) return;
     const p = S.data.posts.find(x => x.id === id);
     const tid = p?.threadId;
     S.data.posts = S.data.posts.filter(x => x.id !== id);
@@ -360,7 +362,7 @@ const App = (() => {
         const still = S.data.posts.filter(x => x.threadId === tid);
         still.length ? openFeedThread(tid) : closeFeedThread();
       }
-      toast('삭제되었습니다', 'ok');
+      toast('Deleted', 'ok');
     } catch(e) { toast(e.message, 'err'); loadData(); }
   }
 
@@ -397,18 +399,18 @@ const App = (() => {
 
     const list = document.getElementById('review-list');
     if (!filtered.length) {
-      list.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><div class="empty-msg">리뷰가 없습니다</div></div>';
+      list.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><div class="empty-msg">No reviews yet</div></div>';
       return;
     }
 
-    const catColor = { movie:'var(--cat-movie)', game:'var(--cat-game)', drama:'var(--cat-drama)', book:'var(--cat-book)', fanwork:'var(--cat-fanwork)' };
+    const catColor = { movie:'var(--cat-movie)', game:'var(--cat-game)', drama:'var(--cat-drama)', book:'var(--cat-book)', travel:'var(--cat-travel)' };
 
     list.innerHTML = filtered.map(r => {
       const col = catColor[r.category] || 'var(--text-dim)';
       const adminA = S.isAdmin ? `
         <div class="review-row-actions">
-          <button class="act-btn" onclick="event.stopPropagation();App.editReview('${r.id}')">✏️ 수정</button>
-          <button class="act-btn del" onclick="event.stopPropagation();App.deleteReview('${r.id}')">🗑️ 삭제</button>
+          <button class="act-btn" onclick="event.stopPropagation();App.editReview('${r.id}')">✏️ Edit</button>
+          <button class="act-btn del" onclick="event.stopPropagation();App.deleteReview('${r.id}')">🗑️ Delete</button>
         </div>` : '';
       return `
         <div class="review-row" onclick="App.openReview('${r.id}')">
@@ -419,7 +421,7 @@ const App = (() => {
               <span class="review-cat-label" style="color:${col}">${CATS[r.category]?.emoji||''} ${CATS[r.category]?.label||r.category}</span>
               <span class="review-date">${fmtDate(r.timestamp)}</span>
               <span class="review-count">${r.threads?.length || 0} threads</span>
-              ${r.edited ? '<span style="font-size:10px;color:var(--text-dim);font-family:var(--font-mono)">수정됨</span>' : ''}
+              ${r.edited ? '<span style="font-size:10px;color:var(--text-dim);font-family:var(--font-mono)">edited</span>' : ''}
             </div>
             ${adminA}
           </div>
@@ -435,30 +437,30 @@ const App = (() => {
     const dv = document.getElementById('review-detail-view');
     dv.classList.add('show');
 
-    const catColor = { movie:'var(--cat-movie)', game:'var(--cat-game)', drama:'var(--cat-drama)', book:'var(--cat-book)', fanwork:'var(--cat-fanwork)' };
+    const catColor = { movie:'var(--cat-movie)', game:'var(--cat-game)', drama:'var(--cat-drama)', book:'var(--cat-book)', travel:'var(--cat-travel)' };
     const col = catColor[r.category] || 'var(--text-dim)';
     const av = S.data.config.avatar
       ? `<img src="${S.data.config.avatar}" alt="">` : (S.data.config.author||'A').charAt(0);
 
     const adminA = S.isAdmin ? `
       <div class="wd-actions">
-        <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px" onclick="App.editReview('${r.id}')">✏️ 수정</button>
-        <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px;color:var(--danger)" onclick="App.deleteReview('${r.id}')">🗑️ 삭제</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px" onclick="App.editReview('${r.id}')">✏️ Edit</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px;color:var(--danger)" onclick="App.deleteReview('${r.id}')">🗑️ Delete</button>
       </div>` : '';
 
     dv.innerHTML = `
-      <button class="td-back" onclick="App.closeReview()">← 리뷰 목록</button>
+      <button class="td-back" onclick="App.closeReview()">← Back to reviews</button>
       <div class="rd-header">
         <div class="rd-cat-badge"><span style="width:7px;height:7px;border-radius:50%;background:${col};display:inline-block"></span> ${CATS[r.category]?.emoji||''} ${CATS[r.category]?.label||r.category}</div>
         <div class="rd-title">${esc(r.title)}</div>
-        <div class="rd-meta">${fmtDate(r.timestamp)}${r.edited?' · 수정됨':''}</div>
+        <div class="rd-meta">${fmtDate(r.timestamp)}${r.edited?' · edited':''}</div>
         ${adminA}
       </div>
       <div class="rd-threads">
         ${(r.threads||[]).map((t, i, arr) => `
           <div class="rd-thread-item">
             <div class="rd-thread-connector">
-              <div class="p-avatar" style="width:36px;height:36px;font-size:15px">${av}</div>
+              <div class="rd-thread-dot"></div>
               ${i < arr.length-1 ? '<div class="rd-tline"></div>' : ''}
             </div>
             <div>
@@ -468,7 +470,7 @@ const App = (() => {
           </div>`).join('')}
       </div>
       <div class="comments-wrap" style="padding:0 24px 32px">
-        <div class="comments-title">💬 댓글</div>
+        <div class="comments-title">Comments</div>
         <div id="review-comments"></div>
       </div>`;
 
@@ -521,10 +523,10 @@ const App = (() => {
     const cat   = document.getElementById('rc-cat').value;
     const tas   = [...document.querySelectorAll('#rc-threads-wrap .rc-thread-ta')];
     const threads = tas.map(t => t.value.trim()).filter(Boolean);
-    if (!title || !threads.length) { toast('제목과 내용을 입력하세요', 'err'); return; }
+    if (!title || !threads.length) { toast('Title and content required', 'err'); return; }
 
     const btn = document.getElementById('rc-send');
-    btn.disabled = true; btn.textContent = '저장 중...';
+    btn.disabled = true; btn.textContent = 'Saving...';
     try {
       if (S.editReview) {
         S.editReview.title = title;
@@ -547,9 +549,9 @@ const App = (() => {
       await saveData('Save review');
       closeReviewCompose();
       renderProfile(); renderSidebarCounts(); renderReviews();
-      toast('리뷰가 저장되었습니다 ✓', 'ok');
+      toast('리뷰가 Saved ✓', 'ok');
     } catch(e) { toast(e.message, 'err'); }
-    btn.disabled = false; btn.textContent = '저장';
+    btn.disabled = false; btn.textContent = 'Save';
   }
 
   function editReview(id) {
@@ -564,13 +566,13 @@ const App = (() => {
   }
 
   async function deleteReview(id) {
-    if (!confirm('리뷰를 삭제할까요?')) return;
+    if (!confirm('Delete this review?')) return;
     S.data.reviews = S.data.reviews.filter(x => x.id !== id);
     try {
       await saveData('Delete review');
       if (S.reviewView === 'detail') closeReview();
       renderProfile(); renderSidebarCounts(); renderReviews();
-      toast('삭제되었습니다', 'ok');
+      toast('Deleted', 'ok');
     } catch(e) { toast(e.message, 'err'); loadData(); }
   }
 
@@ -585,14 +587,14 @@ const App = (() => {
     const all = S.data.writings.slice().sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
     const list = document.getElementById('writing-list');
     if (!all.length) {
-      list.innerHTML = '<div class="empty"><div class="empty-icon">🖊️</div><div class="empty-msg">글이 없습니다</div></div>';
+      list.innerHTML = '<div class="empty"><div class="empty-icon">🖊️</div><div class="empty-msg">No writings yet</div></div>';
       return;
     }
     list.innerHTML = all.map(w => {
       const adminA = S.isAdmin ? `
         <div class="writing-row-actions">
-          <button class="act-btn" onclick="event.stopPropagation();App.editWriting('${w.id}')">✏️ 수정</button>
-          <button class="act-btn del" onclick="event.stopPropagation();App.deleteWriting('${w.id}')">🗑️ 삭제</button>
+          <button class="act-btn" onclick="event.stopPropagation();App.editWriting('${w.id}')">✏️ Edit</button>
+          <button class="act-btn del" onclick="event.stopPropagation();App.deleteWriting('${w.id}')">🗑️ Delete</button>
         </div>` : '';
       return `
         <div class="writing-row" onclick="App.openWriting('${w.id}')">
@@ -616,8 +618,8 @@ const App = (() => {
 
     const adminA = S.isAdmin ? `
       <div class="wd-actions">
-        <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px" onclick="App.editWriting('${w.id}')">✏️ 수정</button>
-        <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px;color:var(--danger)" onclick="App.deleteWriting('${w.id}')">🗑️ 삭제</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px" onclick="App.editWriting('${w.id}')">✏️ Edit</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px;color:var(--danger)" onclick="App.deleteWriting('${w.id}')">🗑️ Delete</button>
       </div>` : '';
 
     dv.innerHTML = `
@@ -625,12 +627,12 @@ const App = (() => {
       <div class="wd-header">
         <div class="wd-tags">${(w.tags||[]).map(t=>`<span class="w-tag">${esc(t)}</span>`).join('')}</div>
         <div class="wd-title">${esc(w.title)}</div>
-        <div class="wd-meta">${fmtDate(w.timestamp)}${w.edited?' · 수정됨':''}</div>
+        <div class="wd-meta">${fmtDate(w.timestamp)}${w.edited?' · edited':''}</div>
         ${adminA}
       </div>
       <div class="wd-body">${fmtWriting(w.content)}</div>
       <div class="comments-wrap" style="padding:0 24px 32px">
-        <div class="comments-title">💬 댓글</div>
+        <div class="comments-title">Comments</div>
         <div id="writing-comments"></div>
       </div>`;
 
@@ -671,12 +673,12 @@ const App = (() => {
     const title = document.getElementById('wc-title').value.trim();
     const tagsRaw = document.getElementById('wc-tags').value.trim();
     const content = document.getElementById('wc-content').value.trim();
-    if (!title || !content) { toast('제목과 내용을 입력하세요', 'err'); return; }
+    if (!title || !content) { toast('Title and content required', 'err'); return; }
     const tags = tagsRaw ? tagsRaw.split(',').map(t=>t.trim()).filter(Boolean) : [];
     const excerpt = content.substring(0, 80) + (content.length > 80 ? '...' : '');
 
     const btn = document.getElementById('wc-send');
-    btn.disabled = true; btn.textContent = '저장 중...';
+    btn.disabled = true; btn.textContent = 'Saving...';
     try {
       if (S.editWriting) {
         Object.assign(S.editWriting, { title, content, tags, excerpt, edited: true, editedAt: new Date().toISOString() });
@@ -687,9 +689,9 @@ const App = (() => {
       await saveData('Save writing');
       closeWritingCompose();
       renderProfile(); renderSidebarCounts(); renderWritings();
-      toast('글이 저장되었습니다 ✓', 'ok');
+      toast('글이 Saved ✓', 'ok');
     } catch(e) { toast(e.message, 'err'); }
-    btn.disabled = false; btn.textContent = '저장';
+    btn.disabled = false; btn.textContent = 'Save';
   }
 
   function editWriting(id) {
@@ -703,13 +705,13 @@ const App = (() => {
   }
 
   async function deleteWriting(id) {
-    if (!confirm('글을 삭제할까요?')) return;
+    if (!confirm('Delete this writing?')) return;
     S.data.writings = S.data.writings.filter(x => x.id !== id);
     try {
       await saveData('Delete writing');
       if (S.writingView === 'detail') closeWriting();
       renderProfile(); renderSidebarCounts(); renderWritings();
-      toast('삭제되었습니다', 'ok');
+      toast('Deleted', 'ok');
     } catch(e) { toast(e.message, 'err'); loadData(); }
   }
 
@@ -737,20 +739,20 @@ const App = (() => {
     const t = document.getElementById('m-token').value.trim();
     const o = document.getElementById('m-owner').value.trim();
     const r = document.getElementById('m-repo').value.trim();
-    if (!t || !o || !r) { toast('모든 항목 입력 필요', 'err'); return; }
+    if (!t || !o || !r) { toast('All fields required', 'err'); return; }
     localStorage.setItem('gh_token', t);
     localStorage.setItem('gh_owner', o);
     localStorage.setItem('gh_repo', r);
     S.isAdmin = true; S.token = t; S.owner = o; S.repo = r;
     closeAdminModal(); updateAdminUI(); renderSection(S.section);
-    toast('관리자 모드 활성화 ✓', 'ok');
+    toast('Admin mode enabled ✓', 'ok');
   }
 
   function logoutAdmin() {
     ['gh_token','gh_owner','gh_repo'].forEach(k => localStorage.removeItem(k));
     S.isAdmin = false; S.token = S.owner = S.repo = null;
     updateAdminUI(); renderSection(S.section);
-    toast('로그아웃되었습니다');
+    toast('Logged out');
   }
 
   function updateAdminUI() {
