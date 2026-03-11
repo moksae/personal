@@ -249,9 +249,16 @@
         <input type="text" id="wc-title"   class="rc-input" placeholder="Title">
         <input type="text" id="wc-tags"    class="rc-input" placeholder="Tags (comma-separated, e.g. 단편소설, SF)">
         <textarea id="wc-content" class="wc-ta" placeholder="Write here...&#10;&#10;Blank line = new paragraph."></textarea>
-        <div style="display:flex;gap:8px;justify-content:flex-end">
-          <button id="wc-cancel" class="btn btn-ghost">Cancel</button>
-          <button id="wc-send"   class="btn btn-primary">Save</button>
+        <!-- Writing image upload -->
+        <div id="wc-img-wrap" class="image-preview-wrap" style="margin-bottom:8px"></div>
+        <div style="display:flex;gap:8px;justify-content:space-between;align-items:center">
+          <label class="img-upload-btn" title="Attach image (JPG/PNG/GIF/WEBP)">
+            📎 <input type="file" id="wc-img-input" accept="image/jpeg,image/png,image/gif,image/webp" multiple style="display:none">
+          </label>
+          <div style="display:flex;gap:8px">
+            <button id="wc-cancel" class="btn btn-ghost">Cancel</button>
+            <button id="wc-send"   class="btn btn-primary">Save</button>
+          </div>
         </div>
       </div>
 
