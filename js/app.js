@@ -467,10 +467,6 @@ const App = (() => {
     btn.disabled = false; btn.textContent = 'Post';
   }
 
-  // Upload image file to GitHub repo → returns raw URL
-    return 'https://raw.githubusercontent.com/' + S.owner + '/' + S.repo + '/main/images/' + fname;
-  }
-
 
   function clearImagePreviews() {
     const wrap = document.getElementById('image-preview-wrap');
