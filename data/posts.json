@@ -10,7 +10,18 @@
       "잡담"
     ]
   },
-  "posts": [],
+  "posts": [
+    {
+      "id": "post-1773220621450",
+      "content": "ㅅㄷㄴㅅ",
+      "timestamp": "2026-03-11T09:17:01.450Z",
+      "parentId": null,
+      "threadId": "thread-post-1773220621450",
+      "images": [],
+      "edited": false,
+      "editedAt": null
+    }
+  ],
   "reviews": [
     {
       "id": "review-001",
