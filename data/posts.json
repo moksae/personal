@@ -12,16 +12,6 @@
   },
   "posts": [
     {
-      "id": "post-1773219612701",
-      "content": "fsdf",
-      "timestamp": "2026-03-11T09:00:12.701Z",
-      "parentId": null,
-      "threadId": "thread-post-1773219612701",
-      "images": [],
-      "edited": false,
-      "editedAt": null
-    },
-    {
       "id": "post-001",
       "content": "✋ 안녕하세요! 트위터 스타일 개인 홈페이지입니다. 리뷰 탭에서 타래 리뷰를 모아볼 수 있고, 글 탭에서 긴 글을 읽을 수 있어요.",
       "timestamp": "2026-03-10T09:00:00Z",
