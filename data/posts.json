@@ -12,7 +12,24 @@
       "editedAt": null
     }
   ],
-  "reviews": [],
+  "reviews": [
+    {
+      "id": "review-1773296273541",
+      "title": "test",
+      "category": "game",
+      "timestamp": "2026-03-12T06:17:53.541Z",
+      "edited": false,
+      "editedAt": null,
+      "threads": [
+        {
+          "id": "rv1773296273541-t0",
+          "content": "test",
+          "images": [],
+          "timestamp": "2026-03-12T06:17:53.541Z"
+        }
+      ]
+    }
+  ],
   "writings": [],
   "pics": []
 }
