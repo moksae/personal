@@ -1070,5 +1070,15 @@
       "hidden": false
     }
   ],
-  "pics": []
+  "pics": [
+    {
+      "id": "pic-1773298499225",
+      "caption": "ㅅㄷㄴ",
+      "images": [
+        "https://raw.githubusercontent.com/moksae/personal/main/images/img-1773298497719-w1w6.jpg"
+      ],
+      "timestamp": "2026-03-12T06:54:59.225Z",
+      "hidden": false
+    }
+  ]
 }
